@@ -50,11 +50,16 @@ louis gathers information from the kernel through eBPF (with BCC). These sources
                    +--------------------------------------------+
 ```
 
-> There is no kernelspace component, which means louis is more susceptible to resource exhaustion and any type of binary/execution manipulation. However, if that happens, you'll probably know about it.
+> There is no kernelspace component, which means `louis` is more susceptible to resource exhaustion and any type of binary/execution manipulation. However, if that happens, you'll probably know about it.
 
 ## Screenshots & Examples
 
 In progress.
+
+## Areas of Improvement
+
+- Modify eBPF code to capture return code (results) from all syscall tracing.
+- Get absolute path for all openat syscalls
 
 ## Prior Art
 
