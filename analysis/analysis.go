@@ -2,29 +2,20 @@ package analysis
 
 import (
 	"fmt"
-	"time"
 	"os/user"
 	"strconv"
+	"time"
 
 	. "github.com/logrusorgru/aurora"
 
-	"github.com/sourque/louis/events"
-	"github.com/sourque/louis/techs"
 	"github.com/sourque/louis/correlate"
+	"github.com/sourque/louis/events"
+	"github.com/sourque/louis/output"
+	"github.com/sourque/louis/techs"
 )
 
-type Detection struct {
-	Time      time.Time
-	Level     int
-	Tech      techs.Tech
-	Dupe      *Detection
-	Artifacts []events.LogItem
-}
-
-// "global" logs
-// implement as analysis context
-// use ring buffer
-var FileCreateLog []string
+// Infractions (detections above warn) by user IDs
+var naughtyList = make(map[uint32]int)
 
 func (d *Detection) Print() string {
 	// Warning
@@ -51,9 +42,12 @@ func (d *Detection) Brief() string {
 		Username: "?",
 	}
 	if len(d.Artifacts) > 0 {
-		u, _ = user.LookupId(strconv.Itoa(int(d.Artifacts[0].Data.FetchUid())))
+		u, _ = user.LookupId(strconv.Itoa(int(d.Artifacts[0].Ev.FetchUid())))
+		startDate := output.Time(d.Artifacts[0].Time)
+		endDate := output.Time(d.Artifacts[len(d.Artifacts)-1].Time)
+		return fmt.Sprintf("%s in %s from %s - %s", u.Username, d.Artifacts[0].Ev.FetchPwd(), startDate, endDate)
 	}
-	return fmt.Sprintf("u(s): %s in PATH from X - X", u.Username)
+	return fmt.Sprintf("no artifacts loaded")
 }
 
 func processTechs(e events.Event, ts []techs.Tech) ([]*Detection, error) {
@@ -77,5 +71,12 @@ func processTechs(e events.Event, ts []techs.Tech) ([]*Detection, error) {
 
 func isDetectionDupe(d *Detection) *Detection {
 	// find things with same Tech, if so, will be printed as additional info
+	allDets := GetAll()
+	if len(allDets) > 0 {
+		lastDet := allDets[len(allDets)-1]
+		if lastDet.Det.Tech == d.Tech {
+			return &lastDet.Det
+		}
+	}
 	return &Detection{}
 }

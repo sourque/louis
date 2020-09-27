@@ -2,6 +2,7 @@ package correlate
 
 import (
 	"reflect"
+
 	"github.com/sourque/louis/events"
 )
 
@@ -18,9 +19,15 @@ func Summarize(es []events.LogItem) []events.LogItem {
 	// only allow a few of each event, most useful
 
 	// temporary-- open is just too noisy
-	summarizedEvents := ignoreEvent(es, []string{"events.Open"})
-	
+	summarizedEvents := ignoreEvent(es, []string{"*events.Open"})
+
 	summarizedEvents = CombineProc(summarizedEvents)
+
+	// temporary length limit
+	if len(summarizedEvents) > 10 {
+		return summarizedEvents[len(summarizedEvents)-10:]
+	}
+
 	return summarizedEvents
 }
 
@@ -32,8 +39,8 @@ func Related(e events.Event) []events.LogItem {
 
 	foundEvents := []events.LogItem{}
 	es := events.GetAll()
-	if reflect.TypeOf(e).String() == "events.Open" {
-		//fmt.Println(Bin(es, e.FetchPid()))
+	if reflect.TypeOf(e).String() == "*events.Open" {
+		//	fmt.Println(Bin(es, e.FetchPid()))
 	}
 	foundEvents = findUid(es, e.FetchUid())
 	return foundEvents

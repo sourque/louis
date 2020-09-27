@@ -10,7 +10,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 //
-// This code is (mostly) copied from iovisor/gobpf examples.
+// This code is almost entirely copied from iovisor/gobpf examples.
 
 package events
 
@@ -18,7 +18,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"flag"
 	"fmt"
 	"os"
 	"strconv"
@@ -39,7 +38,7 @@ const (
 
 type Exec struct {
 	eventBase
-	Ppid string
+	Ppid   string
 	Comm   string
 	Type   int32
 	Argv   string
@@ -67,8 +66,8 @@ const execSource string = `
 #define ARGSIZE  128
 
 enum event_type {
-    EVENT_ARG,
-    EVENT_RET,
+    EVENT_ARG, // event arguments
+    EVENT_RET, // event return value
 };
 
 struct data_t {
@@ -132,7 +131,8 @@ int syscall__execve(struct pt_regs *ctx,
     // handle truncated argument list
     char ellipsis[] = "...";
     __submit_arg(ctx, (void *)ellipsis, &data);
-out:
+
+	out:
     return 0;
 }
 
@@ -159,7 +159,6 @@ int do_ret_sys_execve(struct pt_regs *ctx)
 }
 `
 
-
 // getPpid is a fallback to read the parent PID from /proc.
 // Some kernel versions, like 4.13.0 return 0 getting the parent PID
 // from the current task, so we need to use this fallback to have
@@ -184,14 +183,9 @@ func getPpid(pid uint64) uint64 {
 }
 
 func ExecBPF(evChan chan Event, ctx Ctx) {
-	traceFailed := flag.Bool("x", true, "trace failed exec()s")
-	quotemarks := flag.Bool("q", false, `add "quotemarks" around arguments`)
-	filterComm := flag.String("n", "", `only print command lines containing a name, for example "main"`)
-	filterArg := flag.String("l", "", `only print command where arguments contain an argument, for example "tpkg"`)
-	maxArgs := flag.Uint64("m", 20, "maximum number of arguments parsed and displayed, defaults to 20")
+	maxArgs := 20
 
-
-	m := bpf.NewModule(strings.Replace(execSource, "MAX_ARGS", strconv.FormatUint(*maxArgs, 10), -1), []string{})
+	m := bpf.NewModule(strings.Replace(execSource, "MAX_ARGS", strconv.Itoa(maxArgs), -1), []string{})
 	defer m.Close()
 
 	fnName := bpf.GetSyscallFnName("execve")
@@ -234,14 +228,13 @@ func ExecBPF(evChan chan Event, ctx Ctx) {
 
 	go func() {
 		args := make(map[uint64][]string)
-        ctx.Load <- "exec"
-        ctx.LoadWg.Done()
+		ctx.Load <- "exec"
+		ctx.LoadWg.Done()
 		for {
 			data := <-channel
 
 			var event execveEvent
 			err := binary.Read(bytes.NewBuffer(data), bpf.GetHostByteOrder(), &event)
-
 			if err != nil {
 				fmt.Printf("failed to decode received data: %s\n", err)
 				continue
@@ -257,28 +250,14 @@ func ExecBPF(evChan chan Event, ctx Ctx) {
 				e = append(e, C.GoString(argv))
 				args[event.Pid] = e
 			} else {
-				if event.RetVal != 0 && !*traceFailed {
-					delete(args, event.Pid)
-					continue
-				}
-
 				comm := C.GoString((*C.char)(unsafe.Pointer(&event.Comm)))
-				if *filterComm != "" && !strings.Contains(comm, *filterComm) {
-					delete(args, event.Pid)
-					continue
-				}
 
 				argv, ok := args[event.Pid]
 				if !ok {
 					continue
 				}
 
-				if *filterArg != "" && !strings.Contains(strings.Join(argv, " "), *filterArg) {
-					delete(args, event.Pid)
-					continue
-				}
-
-				p := Exec{
+				p := &Exec{
 					Ppid:   "?",
 					Comm:   comm,
 					RetVal: event.RetVal,
@@ -294,18 +273,7 @@ func ExecBPF(evChan chan Event, ctx Ctx) {
 					p.Ppid = strconv.FormatUint(event.Ppid, 10)
 				}
 
-				if *quotemarks {
-					var b bytes.Buffer
-					for i, a := range argv {
-						b.WriteString(strings.Replace(a, `"`, `\"`, -1))
-						if i != len(argv)-1 {
-							b.WriteString(" ")
-						}
-					}
-					p.Argv = b.String()
-				} else {
-					p.Argv = strings.Join(argv, " ")
-				}
+				p.Argv = strings.Join(argv, " ")
 				p.Argv = strings.TrimSpace(strings.Replace(p.Argv, "\n", "\\n", -1))
 
 				evChan <- p

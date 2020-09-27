@@ -25,8 +25,7 @@ func (t L1001) Check() (bool, int) {
 }
 
 func (t L1001) Clean() {
-
 }
-func (t L1001) Mitigate() {
 
+func (t L1001) Mitigate() {
 }

@@ -1,6 +1,6 @@
 # louis
 
-`louis` is a simple tool using eBPF to automatically detect and respond to malicious behavior on a linux system.
+`louis` is a simple tool using eBPF to automatically detect and respond to malicious behavior on a Linux system.
 
 ## Usage
 
@@ -24,7 +24,7 @@ Use "louis [command] --help" for more information about a command.
 
 ## Information
 
-louis gathers information from the kernel through eBPF (with BCC). These sources are analyzed, and based on knowledge and categorization of techniques and vulnerabilities.
+louis gathers information from the kernel through eBPF (with BCC). These sources are analyzed with information from categorized techniques and vulnerabilities.
 
 ```
                                                 +------------+
@@ -56,10 +56,14 @@ louis gathers information from the kernel through eBPF (with BCC). These sources
 
 ![Example of Louis Running](./docs/example.gif)
 
-## Areas of Improvement
+## Fun future activities
 
-- Modify eBPF code to capture return code (results) from all syscall tracing.
-- Get absolute path for all openat syscalls
+- Get absolute path for all openat syscalls (get task->fs->pwd.dentry->d_name.name for each dentry->d_parent)
+- Macro/reduce code duplication in BPF code
+- Sources
+    - eBPF additions (other than itself)
+    - sys_write
+    - pam authentication
 
 ## Prior Art
 

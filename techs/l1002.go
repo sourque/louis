@@ -3,8 +3,8 @@ package techs
 import (
 	"fmt"
 
-	"github.com/sourque/louis/events"
 	"github.com/sourque/louis/correlate"
+	"github.com/sourque/louis/events"
 )
 
 // L1002 is non-trusted users or programs reading /etc/shadow.
@@ -21,8 +21,8 @@ func (t L1002) Scan(e events.Event) Finding {
 		"/usr/bin/sudo",
 	}
 	switch e.(type) {
-	case events.Open:
-		ev := e.(events.Open)
+	case *events.Open:
+		ev := e.(*events.Open)
 		if events.ReadCString(ev.Filename[:]) == "/etc/shadow" {
 			callingBin, err := correlate.Bin(events.GetAll(), e.FetchPid())
 			if err != nil {
@@ -43,8 +43,7 @@ func (t L1002) Check() (bool, int) {
 }
 
 func (t L1002) Clean() {
-
 }
-func (t L1002) Mitigate() {
 
+func (t L1002) Mitigate() {
 }

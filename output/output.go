@@ -2,17 +2,19 @@ package output
 
 import (
 	"fmt"
-	"strings"
 	"log"
-	"time"
 	"os"
+	"strings"
+	"time"
 
 	. "github.com/logrusorgru/aurora"
 )
 
-var logger *log.Logger
-var tabs string
-var verbose bool
+var (
+	logger  *log.Logger
+	tabs    string
+	verbose bool
+)
 
 func Init() {
 	logger = log.New(os.Stdout, "", 0)
@@ -20,6 +22,10 @@ func Init() {
 
 func SetVerbose(v bool) {
 	verbose = v
+}
+
+func Time(t time.Time) string {
+	return t.Format("03:04:05 PM")
 }
 
 // pretty-print output

@@ -1,11 +1,10 @@
 package techs
 
 import (
-	"fmt"
-    "strings"
+	"strings"
 
-	"github.com/sourque/louis/events"
 	"github.com/sourque/louis/correlate"
+	"github.com/sourque/louis/events"
 )
 
 // L1002 is non-trusted users or programs reading /etc/shadow.
@@ -18,16 +17,19 @@ func (t T1098) Name() string {
 func (t T1098) Scan(e events.Event) Finding {
 	res := Finding{}
 	switch e.(type) {
-    // should be Write
-    // catch return value???
-	case events.Open:
-		ev := e.(events.Open)
-        fileName := events.ReadCString(ev.Filename[:])
+	// should be Write
+	// catch return value???
+	case *events.Open:
+		ev := e.(*events.Open)
+		fileName := events.ReadCString(ev.Filename[:])
 		if strings.Contains(fileName, "authorized_keys") {
 			owner, err := correlate.Owner(fileName)
 			if err != nil {
-				fmt.Println("t1098: error in fetching file owner:", err)
-                return res
+				// file not found
+				// fmt.Println("t1098: error in fetching file owner:", err)
+				res.Found = true
+				res.Level = levelWarn
+				return res
 			}
 			if owner != ev.Uid {
 				res.Found = true
@@ -43,8 +45,7 @@ func (t T1098) Check() (bool, int) {
 }
 
 func (t T1098) Clean() {
-
 }
-func (t T1098) Mitigate() {
 
+func (t T1098) Mitigate() {
 }

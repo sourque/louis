@@ -20,7 +20,7 @@ import (
 	bpf "github.com/iovisor/gobpf/bcc"
 )
 
-type Readline struct{
+type Readline struct {
 	eventBase
 	Str [80]byte
 }
@@ -37,6 +37,9 @@ func ReadlineBPF(evChan chan Event, ctx Ctx) {
 struct readline_event_t {
 		u32 uid;
         u32 pid;
+		int retval;
+		int ret;
+		char pwd[128];
         char str[80];
 } __attribute__((packed));
 
@@ -47,13 +50,16 @@ int get_return_value(struct pt_regs *ctx) {
         if (!PT_REGS_RC(ctx))
             return 0;
 
+		event.ret = 1;
 		event.pid = bpf_get_current_pid_tgid();
 		event.uid = bpf_get_current_uid_gid();
         bpf_probe_read(&event.str, sizeof(event.str), (void *)PT_REGS_RC(ctx));
         readline_events.perf_submit(ctx, &event, sizeof(event));
 
         return 0;
-}`, []string{})
+}
+
+`, []string{})
 	defer m.Close()
 
 	readlineUretprobe, err := m.LoadUprobe("get_return_value")
@@ -68,6 +74,6 @@ int get_return_value(struct pt_regs *ctx) {
 		return
 	}
 
-	var event Readline
+	event := &Readline{}
 	readEvents(event, evChan, ctx, m, "readline_events", eventType)
 }

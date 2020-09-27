@@ -28,6 +28,9 @@ func ListenBPF(evChan chan Event, ctx Ctx) {
 		struct listen_event_t {
 			u32 uid;
 			u32 pid;
+			int retval;
+			int ret;
+			char pwd[128];
 			u32 addr;
 			u16 port;
 			s16 backlog;
@@ -67,7 +70,17 @@ func ListenBPF(evChan chan Event, ctx Ctx) {
 
 				return 0;
 			}
-			`, []string{})
+
+			int do_ret_inet_listen(struct pt_regs *ctx)
+			{
+			    struct listen_event_t event = {};
+			    event.pid = bpf_get_current_pid_tgid() >> 32;
+				event.ret = 1;
+			    event.retval = PT_REGS_RC(ctx);
+			    listen_events.perf_submit(ctx, &event, sizeof(event));
+			    return 0;
+			}
+		`, []string{})
 	defer m.Close()
 
 	listenKprobe, err := m.LoadKprobe("kprobe__inet_listen")
@@ -82,7 +95,17 @@ func ListenBPF(evChan chan Event, ctx Ctx) {
 		return
 	}
 
+	kretprobe, err := m.LoadKprobe("do_ret_inet_listen")
+	if err != nil {
+		ctx.Error <- newError(eventType, "failed to load do_ret_sys_openat", err)
+		return
+	}
 
-	var event Listen
+	if err := m.AttachKretprobe("inet_listen", kretprobe, -1); err != nil {
+		ctx.Error <- newError(eventType, "failed to attach do_ret_inet_listen", err)
+		return
+	}
+
+	event := &Listen{}
 	readEvents(event, evChan, ctx, m, "listen_events", eventType)
 }

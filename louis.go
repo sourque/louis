@@ -1,8 +1,8 @@
 package main
 
 import (
-	"os"
 	"fmt"
+	"os"
 	"os/signal"
 
 	"github.com/sourque/louis/analysis"
@@ -15,18 +15,21 @@ import (
 var (
 	passive     bool
 	verbose     bool
-	ignoreList []string
 	mitigate    bool
+	duplicates  bool
 	interactive bool
-	version     = "0.0.1"
+	ignoreList  []string
+)
+
+const (
+	version = "0.0.1"
 )
 
 // monitor
 // scan (default values to investigate)
 // mitigate (run through all mitigations, mitigate.Check() mitigate.Run())
 func main() {
-
-	var cmdMonitor = &cobra.Command{
+	cmdMonitor := &cobra.Command{
 		Use:     "monitor",
 		Aliases: []string{"m", "mon", "eyes"},
 		Short:   "actively monitor for malicious action",
@@ -36,23 +39,24 @@ func main() {
 	}
 
 	cmdMonitor.Flags().BoolVarP(&mitigate, "mitigate", "m", false, "attempt to mitigate detected techniques")
+	cmdMonitor.Flags().BoolVarP(&duplicates, "duplicates", "d", false, "show duplicate detections")
 	cmdMonitor.Flags().StringSliceVarP(&ignoreList, "ignore", "i", []string{}, "don't show certain event types in verbose mode (ex. -i open)")
 
-	var cmdScan = &cobra.Command{
+	cmdScan := &cobra.Command{
 		Use:   "scan",
 		Short: "scan for malicious activity in common locations",
 		Run: func(cmd *cobra.Command, args []string) {
 		},
 	}
 
-	var cmdMitigate = &cobra.Command{
+	cmdMitigate := &cobra.Command{
 		Use:   "mitigate",
 		Short: "iterate through each known vulnerability and remediate",
 		Run: func(cmd *cobra.Command, args []string) {
 		},
 	}
 
-	var cmdVersion = &cobra.Command{
+	cmdVersion := &cobra.Command{
 		Use:   "version",
 		Short: "print louis version",
 		Run: func(cmd *cobra.Command, args []string) {
@@ -60,7 +64,7 @@ func main() {
 		},
 	}
 
-	var rootCmd = &cobra.Command{
+	rootCmd := &cobra.Command{
 		Use: "louis",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			output.Init()
@@ -124,17 +128,17 @@ func louisMonitor() {
 				// automatically detect and cast type? use wrapper struct with analysis function embedded?
 				events.Log(ev)
 				switch ev.(type) {
-				case events.Exec:
-					detections, err = analysis.Exec(ev.(events.Exec))
-				case events.Readline:
-					detections, err = analysis.Readline(ev.(events.Readline))
-				case events.Listen:
-					detections, err = analysis.Listen(ev.(events.Listen))
-				case events.Open:
-					detections, err = analysis.Open(ev.(events.Open))
+				case *events.Exec:
+					detections, err = analysis.Exec(ev.(*events.Exec))
+				case *events.Readline:
+					detections, err = analysis.Readline(ev.(*events.Readline))
+				case *events.Listen:
+					detections, err = analysis.Listen(ev.(*events.Listen))
+				case *events.Open:
+					detections, err = analysis.Open(ev.(*events.Open))
 				}
 				if typeHeader := events.TypeHeader(ev); !output.IsIgnored(ignoreList, typeHeader) {
-					output.Event(typeHeader, fmt.Sprintf("%s (%d) [%d]", ev.Print(), ev.FetchUid(), ev.FetchPid()))
+					output.Event(typeHeader, fmt.Sprintf("%s {%d} (%d) [%d]", ev.Print(), ev.FetchRet(), ev.FetchUid(), ev.FetchPid()))
 				}
 			}
 
@@ -144,17 +148,16 @@ func louisMonitor() {
 				continue
 			}
 			for _, det := range detections {
-				if det.Dupe.Tech != nil {
-					output.Warn("{DUPLICATE}", det.Print())
-					output.Tabber(1)
-					output.Warn(det.Dupe.Print())
+				analysis.Log(*det)
+				if det.Dupe.Tech != nil && duplicates {
+					output.Warn("DUPLICATE!", det.Print())
 				} else {
 					output.Warn(det.Print())
 					output.Tabber(1)
 					output.Negative(det.Brief())
 					for i := len(det.Artifacts) - 1; i >= 0; i-- {
 						art := det.Artifacts[i]
-						output.EventLog(art.Time, events.TypeHeader(art.Data), art.Data.Print())
+						output.EventLog(art.Time, events.TypeHeader(art.Ev), art.Ev.Print())
 					}
 
 					if !passive {
@@ -184,6 +187,6 @@ func louisMonitor() {
 	}()
 
 	<-sig
-	output.Warn("Exiting! Waiting for monitoring goroutines to quit...")
+	output.Info("Waiting for monitoring goroutines to quit...")
 	evCtx.Quit <- true
 }
