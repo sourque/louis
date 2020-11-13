@@ -49,20 +49,22 @@ func Exec(e *events.Exec) ([]*Detection, error) {
 	return detections, nil
 }
 
-func Readline(e *events.Readline) ([]*Detection, error) {
-	detections := []*Detection{}
-	return detections, nil
+func Listen(e *events.Listen) ([]*Detection, error) {
+	return processTechs(e, []techs.Tech{
+		techs.L1001{},
+	})
 }
 
 func Open(e *events.Open) ([]*Detection, error) {
 	return processTechs(e, []techs.Tech{
 		techs.L1002{},
+		techs.L1004{},
+		techs.L1005{},
 		techs.T1098{},
 	})
 }
 
-func Listen(e *events.Listen) ([]*Detection, error) {
-	return processTechs(e, []techs.Tech{
-		techs.L1001{},
-	})
+func Readline(e *events.Readline) ([]*Detection, error) {
+	detections := []*Detection{}
+	return detections, nil
 }

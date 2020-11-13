@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	. "github.com/logrusorgru/aurora"
-
 	"github.com/sourque/louis/correlate"
 	"github.com/sourque/louis/events"
 	"github.com/sourque/louis/output"
@@ -18,20 +16,7 @@ import (
 var naughtyList = make(map[uint32]int)
 
 func (d *Detection) Print() string {
-	// Warning
-	techName := BrightYellow(d.Tech.Name())
-	switch d.Level {
-	// Informational
-	case 0:
-		techName = BrightBlue(d.Tech.Name())
-	// Important
-	case 2:
-		techName = BrightMagenta(d.Tech.Name())
-	// Critical
-	case 3:
-		techName = BrightRed(d.Tech.Name())
-	}
-	return fmt.Sprintf("%s %d artifact(s) {%s}", techName, len(d.Artifacts), d.Time.Format("2006-01-02"))
+	return fmt.Sprintf("%s - %s", d.Tech.Name(), d.Time.Format("2006-01-02"))
 }
 
 func (d *Detection) Brief() string {
@@ -47,7 +32,7 @@ func (d *Detection) Brief() string {
 		endDate := output.Time(d.Artifacts[len(d.Artifacts)-1].Time)
 		return fmt.Sprintf("%s in %s from %s - %s", u.Username, d.Artifacts[0].Ev.FetchPwd(), startDate, endDate)
 	}
-	return fmt.Sprintf("no artifacts loaded")
+	return fmt.Sprintf("no artifacts added")
 }
 
 func processTechs(e events.Event, ts []techs.Tech) ([]*Detection, error) {

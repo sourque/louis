@@ -27,14 +27,17 @@ type Event interface {
 	FetchUid() uint32
 	FetchPid() uint32
 	IsRet() bool
-	FetchRet() int32
-	SetRet(int32)
+	IsPwd() bool
+	FetchRetVal() int32
+	SetRetVal(int32)
+	SetPwd(string)
 	FetchPwd() string
 }
 
 type eventBase struct {
 	Uid    uint32
 	Pid    uint32
+	Ppid   uint32
 	RetVal int32
 	Ret    int32
 	Pwd    [128]byte
@@ -44,6 +47,12 @@ type LogItem struct {
 	Time time.Time
 	Ev   Event
 }
+
+const (
+	eventNormal = iota
+	eventPwd
+	eventRet
+)
 
 func (e *eventBase) Print() string {
 	return "eventBase"
@@ -58,29 +67,39 @@ func (e *eventBase) FetchPid() uint32 {
 }
 
 func (e *eventBase) IsRet() bool {
-	return e.Ret == 1
+	return e.Ret == eventRet
 }
 
-func (e *eventBase) FetchRet() int32 {
+func (e *eventBase) IsPwd() bool {
+	return e.Ret == eventPwd
+}
+
+func (e *eventBase) FetchRetVal() int32 {
 	return e.RetVal
 }
 
-func (e *eventBase) SetRet(val int32) {
+func (e *eventBase) SetRetVal(val int32) {
 	e.RetVal = val
 }
 
 func (e *eventBase) Write(data []byte) (Event, error) {
 	newEvent := &eventBase{}
-	err := binary.Read(bytes.NewBuffer(data), binary.LittleEndian, newEvent)
+	err := binary.Read(bytes.NewBuffer(data), bcc.GetHostByteOrder(), newEvent)
 	return newEvent, err
 }
 
 func (e *eventBase) FetchPwd() string {
-	pwd := ReadCString(e.Pwd[:])
+	pwd := CStr(e.Pwd[:])
 	if pwd == "" {
 		return "?"
 	}
 	return pwd
+}
+
+func (e *eventBase) SetPwd(tmp string) {
+	for i := range tmp {
+		e.Pwd[i] = tmp[i]
+	}
 }
 
 // Contains the most recent 1000 events
@@ -118,7 +137,7 @@ func TypeHeader(e Event) string {
 	return strings.Split(fmt.Sprintf("%T", e), ".")[1]
 }
 
-func ReadCString(cString []byte) string {
+func CStr(cString []byte) string {
 	if len(cString) == 0 {
 		return ""
 	}
@@ -133,20 +152,21 @@ func newError(eventType, errorMsg string, err error) string {
 	return eventType + ": " + errorMsg + ": " + err.Error()
 }
 
-func readEvents(event Event, evChan chan Event, ctx Ctx, m *bcc.Module, tableId, eventType string) {
-	table := bcc.NewTable(m.TableId(tableId), m)
-	eventStaging := make(map[uint32]interface{})
+func readEvents(event Event, evChan chan Event, ctx Ctx, m *bcc.Module, eventType string, normalHandler func(interface{})) {
+	table := bcc.NewTable(m.TableId("events"), m)
+	channel := make(chan []byte, 1000)
 
-	channel := make(chan []byte)
 	perfMap, err := bcc.InitPerfMap(table, channel, nil)
 	if err != nil {
-		ctx.Error <- newError(eventType, "failed to init perf map", err)
+		ctx.Error <- newError(eventType, "failed to decode received data", err)
 		return
 	}
 
-	ctx.Load <- eventType
-	ctx.LoadWg.Done()
 	go func() {
+		pwdCache := make(map[uint32][]string)
+		eventCache := make(map[uint32]Event)
+		ctx.Load <- eventType
+		ctx.LoadWg.Done()
 		for {
 			data := <-channel
 			event, err := event.Write(data)
@@ -154,21 +174,46 @@ func readEvents(event Event, evChan chan Event, ctx Ctx, m *bcc.Module, tableId,
 				ctx.Error <- newError(eventType, "failed to decode received data", err)
 				continue
 			}
-			// Event contains return value
 			if event.IsRet() {
-				if e, ok := eventStaging[event.FetchPid()]; !ok {
-					evChan <- event
-				} else {
-					ev := e.(Event)
-					ev.SetRet(event.FetchRet())
-					evChan <- ev
-					delete(eventStaging, event.FetchPid())
+
+				caEvent, ok := eventCache[event.FetchPid()]
+				if ok {
+					caEvent.SetRetVal(event.FetchRetVal())
+					event = caEvent
 				}
+
+				pwdVal, ok := pwdCache[event.FetchPid()]
+				if ok {
+					tmp := strings.Join(pwdVal, "/")
+					tmp = strings.Replace(tmp, "\n", "\\n", -1)
+					tmp = strings.TrimSpace(tmp)
+					if len(tmp) > 124 {
+						tmp = tmp[:124] + "..."
+					}
+					event.SetPwd(tmp)
+				}
+
+				evChan <- event
+				delete(eventCache, event.FetchPid())
+				delete(pwdCache, event.FetchPid())
+
+			} else if event.IsPwd() {
+				// fmt.Println("received new dir", CStr(event.Pwd[:]))
+				pwdItems, ok := pwdCache[event.FetchPid()]
+				if !ok {
+					pwdItems = make([]string, 0)
+				}
+				pwdCache[event.FetchPid()] = append([]string{event.FetchPwd()}, pwdItems...)
 			} else {
-				eventStaging[event.FetchPid()] = event
+				if normalHandler != nil {
+					normalHandler(event)
+				} else {
+					eventCache[event.FetchPid()] = event
+				}
 			}
 		}
 	}()
+
 	perfMap.Start()
 	<-ctx.Quit
 	perfMap.Stop()

@@ -5,11 +5,31 @@ import (
 	"encoding/binary"
 )
 
+// generic event types for Findings
+
+type File struct {
+	eventBase
+	Filename string
+}
+
+type Process struct {
+	eventBase
+}
+
+type User struct {
+	eventBase
+}
+
 // insert sobbing here
 
 func WriteEventData(newEvent Event, data []byte) (Event, error) {
 	err := binary.Read(bytes.NewBuffer(data), binary.LittleEndian, newEvent)
 	return newEvent, err
+}
+
+func (e *Exec) Write(data []byte) (Event, error) {
+	newEvent := &Exec{}
+	return WriteEventData(newEvent, data)
 }
 
 func (e *Listen) Write(data []byte) (Event, error) {
@@ -19,11 +39,6 @@ func (e *Listen) Write(data []byte) (Event, error) {
 
 func (e *Open) Write(data []byte) (Event, error) {
 	newEvent := &Open{}
-	return WriteEventData(newEvent, data)
-}
-
-func (e *Exec) Write(data []byte) (Event, error) {
-	newEvent := &Exec{}
 	return WriteEventData(newEvent, data)
 }
 

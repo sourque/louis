@@ -8,15 +8,15 @@ import (
 	"github.com/sourque/louis/events"
 )
 
-type T1098 struct {
+type T1547 struct {
 	techBase
 }
 
-func (t T1098) Name() string {
-	return "SSH Authorized Keys Manipulation"
+func (t T1547) Name() string {
+	return "Kernel Modules Persistence"
 }
 
-func (t T1098) Scan(e events.Event) Finding {
+func (t T1547) Scan(e events.Event) Finding {
 	res := Finding{}
 	switch e.(type) {
 	case *events.Open:
@@ -44,18 +44,4 @@ func (t T1098) Scan(e events.Event) Finding {
 		}
 	}
 	return res
-}
-
-func (t T1098) Check() (Finding, error) {
-	// os.Stat file
-	// Ensure permissions of authorized_keys are 644 (or 600?)
-	// ensure perms of id_rsa are 600 and id_rsa.pub 644 or 600
-	return Finding{}, nil
-}
-
-func (t T1098) Mitigate() error {
-	// os.Stat file
-	// Ensure permissions of authorized_keys are 644 (or 600?)
-	// ensure perms of id_rsa are 600 and id_rsa.pub 644 or 600
-	return nil
 }

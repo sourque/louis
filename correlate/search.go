@@ -54,7 +54,7 @@ func Bin(es []events.LogItem, Pid uint32) (string, error) {
 	} else if len(res) > 1 {
 		return "", errors.New("bin: multiple events found")
 	}
-	return strings.Split(res[0].Ev.(*events.Exec).Argv, " ")[0], nil
+	return strings.Split(events.CStr(res[0].Ev.(*events.Exec).Argv[:]), " ")[0], nil
 }
 
 func search(es []events.LogItem, searchFunc func(e events.LogItem) bool) []events.LogItem {

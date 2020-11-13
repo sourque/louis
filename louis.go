@@ -8,13 +8,13 @@ import (
 	"github.com/sourque/louis/analysis"
 	"github.com/sourque/louis/events"
 	"github.com/sourque/louis/output"
+	"github.com/sourque/louis/techs"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	passive     bool
-	verbose     bool
+	active      bool
 	mitigate    bool
 	duplicates  bool
 	interactive bool
@@ -22,12 +22,9 @@ var (
 )
 
 const (
-	version = "0.0.1"
+	version = "0.0.4"
 )
 
-// monitor
-// scan (default values to investigate)
-// mitigate (run through all mitigations, mitigate.Check() mitigate.Run())
 func main() {
 	cmdMonitor := &cobra.Command{
 		Use:     "monitor",
@@ -42,17 +39,23 @@ func main() {
 	cmdMonitor.Flags().BoolVarP(&duplicates, "duplicates", "d", false, "show duplicate detections")
 	cmdMonitor.Flags().StringSliceVarP(&ignoreList, "ignore", "i", []string{}, "don't show certain event types in verbose mode (ex. -i open)")
 
-	cmdScan := &cobra.Command{
-		Use:   "scan",
-		Short: "scan for malicious activity in common locations",
+	cmdHunt := &cobra.Command{
+		Use:     "hunt",
+		Aliases: []string{"h", "uwu"},
+		Short:   "hunt for existing malicious activity",
 		Run: func(cmd *cobra.Command, args []string) {
+			louisHunt()
 		},
 	}
 
+	cmdHunt.Flags().BoolVarP(&mitigate, "mitigate", "m", false, "attempt to mitigate detected techniques")
+
 	cmdMitigate := &cobra.Command{
-		Use:   "mitigate",
-		Short: "iterate through each known vulnerability and remediate",
+		Use:     "mitigate",
+		Aliases: []string{"mit", "cybpat"},
+		Short:   "mitigate all known vulnerabilities",
 		Run: func(cmd *cobra.Command, args []string) {
+			louisMitigate()
 		},
 	}
 
@@ -60,7 +63,7 @@ func main() {
 		Use:   "version",
 		Short: "print louis version",
 		Run: func(cmd *cobra.Command, args []string) {
-			output.Note("louis version", version)
+			output.Notice("louis version", version)
 		},
 	}
 
@@ -68,17 +71,18 @@ func main() {
 		Use: "louis",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			output.Init()
-			output.SetVerbose(verbose)
 		},
 	}
-	rootCmd.PersistentFlags().BoolVarP(&passive, "passive", "p", false, "don't perform any intrusive action")
-	rootCmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "enable verbose output")
-	rootCmd.AddCommand(cmdMonitor, cmdScan, cmdMitigate, cmdVersion)
+
+	rootCmd.PersistentFlags().BoolVarP(&active, "active", "a", true, "counter detected malicious activity (possibly dangerous)")
+	rootCmd.PersistentFlags().BoolVarP(&output.Verbose, "verbose", "v", false, "enable verbose output")
+	rootCmd.PersistentFlags().BoolVarP(&output.Syslog, "syslog", "s", false, "output to syslog")
+	rootCmd.AddCommand(cmdMonitor, cmdHunt, cmdMitigate, cmdVersion)
 	rootCmd.Execute()
 }
 
 func louisMonitor() {
-	output.Positive("Welcome to louis :)")
+	output.Info("Welcome to louis :)")
 
 	// Quit when program receives CTRL-C.
 	sig := make(chan os.Signal, 1)
@@ -91,9 +95,9 @@ func louisMonitor() {
 	// List of implemented sources
 	sourceList := []func(chan events.Event, events.Ctx){
 		events.ExecBPF,
-		events.ReadlineBPF,
+		// events.ListenBPF,
 		events.OpenBPF,
-		events.ListenBPF,
+		// events.ReadlineBPF,
 	}
 
 	// Load each eBPF module
@@ -118,7 +122,7 @@ func louisMonitor() {
 			select {
 
 			case module := <-evCtx.Load:
-				output.Positive("Loaded module:", module)
+				output.Info("Loaded module:", module)
 			case <-evLoaded:
 				output.Info("All modules loaded!")
 			case err := <-evCtx.Error:
@@ -130,29 +134,31 @@ func louisMonitor() {
 				switch ev.(type) {
 				case *events.Exec:
 					detections, err = analysis.Exec(ev.(*events.Exec))
-				case *events.Readline:
-					detections, err = analysis.Readline(ev.(*events.Readline))
 				case *events.Listen:
 					detections, err = analysis.Listen(ev.(*events.Listen))
 				case *events.Open:
 					detections, err = analysis.Open(ev.(*events.Open))
+				case *events.Readline:
+					detections, err = analysis.Readline(ev.(*events.Readline))
 				}
 				if typeHeader := events.TypeHeader(ev); !output.IsIgnored(ignoreList, typeHeader) {
-					output.Event(typeHeader, fmt.Sprintf("%s {%d} (%d) [%d]", ev.Print(), ev.FetchRet(), ev.FetchUid(), ev.FetchPid()))
+					output.Event(typeHeader, fmt.Sprintf("%s {ret: %d} (uid: %d) [pid: %d]", ev.Print(), ev.FetchRetVal(), ev.FetchUid(), ev.FetchPid()))
 				}
 			}
 
 			// Handle detection results
 			if err != nil {
-				output.Error(err)
+				output.Err(err)
 				continue
 			}
 			for _, det := range detections {
 				analysis.Log(*det)
-				if det.Dupe.Tech != nil && duplicates {
-					output.Warn("DUPLICATE!", det.Print())
+				if det.Dupe.Tech != nil {
+					if duplicates {
+						output.Leveled(det.Level, "DUPLICATE!", det.Print())
+					}
 				} else {
-					output.Warn(det.Print())
+					output.Leveled(det.Level, det.Print())
 					output.Tabber(1)
 					output.Negative(det.Brief())
 					for i := len(det.Artifacts) - 1; i >= 0; i-- {
@@ -160,33 +166,68 @@ func louisMonitor() {
 						output.EventLog(art.Time, events.TypeHeader(art.Ev), art.Ev.Print())
 					}
 
-					if !passive {
+					if active {
 						output.Positive("Cleaning", det.Tech)
-						if det.Tech.Clean != nil {
-							det.Tech.Clean()
+						// Clean most recent artifact
+						if len(det.Artifacts) > 0 {
+							det.Tech.Clean(det.Artifacts[0].Ev)
 						}
-						if mitigate && det.Tech.Mitigate != nil {
+						if mitigate {
 							output.Positive("Mitigating", det.Tech)
 							det.Tech.Mitigate()
 						}
 					}
 				}
 				output.Tabber(0)
-
-				// [!] Event detected!
-				//	 [*] T1089 Malcious key added (/root/.ssh/authorized_keys)
-				//		- FileCreate on authorized_keys
-				//   [*] TXXX Backdoor user added (bobbie)
-				//		- FileModified on authorized_keys (ssh-rsa RTjh95d...)
-				//	 [+] Mitigating...
-				//		--> File authorized_keys moved to quarantine
-				//		--> User bobbie locked out
-
 			}
 		}
 	}()
 
 	<-sig
-	output.Info("Waiting for monitoring goroutines to quit...")
+	output.Info("Waiting for monitoring routines to quit...")
 	evCtx.Quit <- true
+}
+
+func louisHunt() {
+	ts := techs.All()
+	for _, t := range ts {
+		output.Info("Hunting:", t.Name())
+		if res, err := t.Hunt(); err != nil {
+			output.Negative("Error in hunting:", t.Name()+":", err.Error())
+		} else if res.Found {
+			output.Positive("Found:", t.Name(), res.Ev.Print())
+			if active {
+				t.Clean(res.Ev)
+				if mitigate {
+					t.Mitigate()
+				}
+			}
+		}
+	}
+}
+
+func louisMitigate() {
+	ts := techs.All()
+	for _, t := range ts {
+		output.Info("Checking:", t.Name())
+		if res, err := t.Check(); err != nil {
+			output.Negative("Error in checking for mitigation:", t.Name()+":", err.Error())
+		} else if res.Found {
+			if !active {
+				output.Positive("Mitigation possible:", t.Name())
+				if res.Ev != nil {
+					output.Tabber(1)
+					output.Negative(res.Ev.Print)
+					output.Tabber(0)
+				}
+			} else {
+				output.Info("Mitigating:", t.Name())
+				if err := t.Mitigate(); err != nil {
+					output.Negative("Error in mitigating:", t.Name()+":", err.Error())
+				} else {
+					output.Positive("Mitigated:", t.Name())
+				}
+			}
+		}
+	}
 }

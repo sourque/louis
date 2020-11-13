@@ -26,7 +26,7 @@ type Readline struct {
 }
 
 func (e Readline) Print() string {
-	return fmt.Sprintf("%s", ReadCString(e.Str[:]))
+	return fmt.Sprintf("%s", CStr(e.Str[:]))
 }
 
 func ReadlineBPF(evChan chan Event, ctx Ctx) {
@@ -75,5 +75,5 @@ int get_return_value(struct pt_regs *ctx) {
 	}
 
 	event := &Readline{}
-	readEvents(event, evChan, ctx, m, "readline_events", eventType)
+	readEvents(event, evChan, ctx, m, eventType, nil)
 }

@@ -26,15 +26,11 @@ func ListenBPF(evChan chan Event, ctx Ctx) {
 		#include <net/inet_sock.h>
 
 		struct listen_event_t {
-			u32 uid;
-			u32 pid;
-			int retval;
-			int ret;
-			char pwd[128];
+			`+eventBaseStr+`
 			u32 addr;
 			u16 port;
-			s16 backlog;
-			short socktype;
+			u16 socktype;
+			u32 backlog;
 			} __attribute__((packed));
 
 			BPF_PERF_OUTPUT(listen_events);
@@ -107,5 +103,5 @@ func ListenBPF(evChan chan Event, ctx Ctx) {
 	}
 
 	event := &Listen{}
-	readEvents(event, evChan, ctx, m, "listen_events", eventType)
+	readEvents(event, evChan, ctx, m, eventType, nil)
 }

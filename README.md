@@ -10,13 +10,15 @@ Usage:
 
 Available Commands:
   help        Help about any command
-  mitigate    Iterate through each known vulnerability and remediate
-  monitor     Actively monitor for malicious action
-  scan        Scan for malicious activity in common locations
+  mitigate    mitigate all known vulnerabilities
+  monitor     actively monitorfor malicious action
+  scan        scan for existing malicious activity
+  version     print louis version
 
 Flags:
   -h, --help      help for louis
   -p, --passive   don't perform any intrusive action
+  -s, --syslog    output to syslog
   -v, --verbose   enable verbose output
 
 Use "louis [command] --help" for more information about a command.
@@ -50,7 +52,17 @@ louis gathers information from the kernel through eBPF (with BCC). These sources
                    +--------------------------------------------+
 ```
 
-> There is no kernelspace component, which means `louis` is more susceptible to resource exhaustion and any type of binary/execution manipulation. However, if that happens, you'll probably know about it.
+> There is no kernelspace component, which means `louis` is more susceptible to resource exhaustion and execution manipulation. However, if that happens, you'll probably know about it.
+
+## Installation
+
+1. Ensure [BCC](https://github.com/iovisor/bcc) is installed.
+2. Install `louis`.
+    - Clone this repository and build the binary (requires Go):
+        ```
+        git clone https://github.com/sourque/louis && cd louis && go build
+        ```
+    - Or download the `louis` binary from releases.
 
 ## Screenshots & Examples
 
@@ -58,12 +70,14 @@ louis gathers information from the kernel through eBPF (with BCC). These sources
 
 ## Fun future activities
 
-- Get absolute path for all openat syscalls (get task->fs->pwd.dentry->d_name.name for each dentry->d_parent)
-- Macro/reduce code duplication in BPF code
-- Sources
-    - eBPF additions (other than itself)
-    - sys_write
+- New Sources
+    - eBPF additions
     - pam authentication
+    - file permission changes (for sensitive dirs (tmp) and creating new bins/suid/sgid)
+- Techs/threat actions
+    - sendlines per <time unit> (bash)
+    - time between shell spawn and sending commands (maybe)
+    - connect() (detect if being scanned)
 
 ## Prior Art
 

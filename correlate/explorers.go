@@ -10,5 +10,5 @@ func Owner(pathName string) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	return file.Sys().(*syscall.Stat_t).Uid, nil
+	return uint32(file.Sys().(*syscall.Stat_t).Uid), nil
 }

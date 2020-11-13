@@ -2,21 +2,20 @@ package techs
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/sourque/louis/correlate"
 	"github.com/sourque/louis/events"
 )
 
-type L1002 struct {
+type L1003 struct {
 	techBase
 }
 
-func (t L1002) Name() string {
-	return "Suspicious /etc/shadow Access"
+func (t L1003) Name() string {
+	return "eBPF Module Persistence"
 }
 
-func (t L1002) Scan(e events.Event) Finding {
+func (t L1003) Scan(e events.Event) Finding {
 	res := Finding{}
 	permittedBins := []string{
 		"/usr/bin/su",
@@ -38,15 +37,4 @@ func (t L1002) Scan(e events.Event) Finding {
 		}
 	}
 	return res
-}
-
-func (t L1002) Check() (Finding, error) {
-	// os.Stat file
-	// if not 600 be angry
-	return Finding{Found: true}, nil
-}
-
-func (t L1002) Mitigate() error {
-	err := os.Chmod("/etc/shadow", 644)
-	return err
 }
