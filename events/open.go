@@ -9,17 +9,16 @@ import (
 type Open struct {
 	eventBase
 	Dfd      int16
-	Filename [80]byte
+	Filename [fileNameSize]byte
 	Flags    int32
 }
 
-func (e Open) Print() string {
+func (e *Open) Print() string {
 	if CStr(e.Filename[:]) == "" {
 		e.Filename[0] = '?'
-	} else {
-		if e.Filename[0] != '/' {
-			return fmt.Sprintf("/%s/%s path flags %d", e.Pwd, e.Filename, e.Flags)
-		}
+	}
+	if CStr(e.Pwd[:]) == "" {
+		e.Pwd[0] = '?'
 	}
 	return fmt.Sprintf("%s path %s flags %d", e.Filename, e.Pwd, e.Flags)
 }
@@ -89,5 +88,5 @@ func OpenBPF(evChan chan Event, ctx Ctx) {
 		return
 	}
 
-	readEvents(event, evChan, ctx, m, eventType, nil)
+	readEvents(event, evChan, ctx, m, eventType)
 }

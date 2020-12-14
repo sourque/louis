@@ -1,8 +1,9 @@
 package techs
 
 import (
+	"github.com/sourque/louis/correlate"
 	"github.com/sourque/louis/events"
-	//"github.com/sourque/louis/system"
+	"github.com/sourque/louis/system"
 )
 
 type L1001 struct {
@@ -20,4 +21,12 @@ func (t L1001) Scan(e events.Event) Finding {
 		res.Level = LevelWarn
 	}
 	return res
+}
+
+func (t L1001) Clean(e events.Event) error {
+	foundEvents, err := correlate.EventType(correlate.Related(e), "events.Listen")
+	if err != nil {
+		return err
+	}
+	return system.Kill(foundEvents[len(foundEvents)-1].Ev.FetchPid())
 }

@@ -37,9 +37,17 @@ func ignoreEvent(es []events.LogItem, evTypes []string) []events.LogItem {
 	})
 }
 
-func EventType(es []events.LogItem, eType string) []events.LogItem {
-	foundEvents := []events.LogItem{}
-	return foundEvents
+func EventType(es []events.LogItem, eType string) ([]events.LogItem, error) {
+	foundEvents := search(es, func(e events.LogItem) bool {
+		if strings.Contains(reflect.TypeOf(e.Ev).String(), eType) {
+			return true
+		}
+		return false
+	})
+	if len(foundEvents) == 0 {
+		return foundEvents, errors.New("eventType: no events found")
+	}
+	return foundEvents, nil
 }
 
 func Bin(es []events.LogItem, Pid uint32) (string, error) {

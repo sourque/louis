@@ -4,11 +4,18 @@ import (
 	"strconv"
 )
 
+const (
+	argSize      = 128
+	commLen      = 16
+	maxArgs      = 20
+	fileNameSize = 80
+)
+
 var (
 	eventBaseStr = `
 	u32 uid;
 	u32 pid;  // PID as in the userspace term (i.e. task->tgid in kernel)
-	u32 ppid; // Parent PID as in the userspace term (i.e task->real_parent->tgid in kernel)
+	u32 ppid; // Parent PID as in the userspace term (i.e. task->real_parent->tgid in kernel)
 	int retval;
 	int ret;
 	char pwd[128];
@@ -17,8 +24,18 @@ var (
 	submitArgStr = `
 	`
 
+	// submitNormal is for typical function returns, where the
+	// entire event should be cached until a return
 	submitNormal = `
 	event.ret = ` + strconv.Itoa(eventNormal) + `;
+    events.perf_submit(ctx, &event, sizeof(struct event_t));
+	return 0;
+	`
+
+	// submitOther is used with events featuring a special list
+	// that must be handled (ex. argv with Exec)
+	submitOther = `
+	event.ret = ` + strconv.Itoa(eventOther) + `;
     events.perf_submit(ctx, &event, sizeof(struct event_t));
 	return 0;
 	`
@@ -33,15 +50,16 @@ var (
 	getPwd = `
 	struct dentry* walker = task->fs->pwd.dentry;
 
-    for (int i = 1; i < ` + strconv.Itoa(maxArgs) + `; i++) {
+    for (int i = 0; i < ` + strconv.Itoa(maxArgs) + `; i++) {
 		bpf_probe_read_str(&event.pwd, sizeof(event.pwd), walker->d_name.name);
 
 		event.ret = ` + strconv.Itoa(eventPwd) + `;
 	    events.perf_submit(ctx, &event, sizeof(struct event_t));
 
-		if (walker->d_parent == walker->d_parent->d_parent)
-			break;
 		walker = walker->d_parent;
+
+		if (walker == walker->d_parent)
+			break;
     }
 	`
 

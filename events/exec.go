@@ -1,10 +1,8 @@
+// Exec provides data on execve calls.
 // This code is modified from iovisor/gobpf examples.
-
 package events
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
 	"os"
 	"strconv"
@@ -15,20 +13,35 @@ import (
 
 import "C"
 
-const (
-	argSize = 128
-	commLen = 16
-	maxArgs = 20
-)
-
 type Exec struct {
 	eventBase
 	Comm [commLen]byte
 	Argv [argSize]byte
 }
 
-func (e Exec) Print() string {
+func (e *Exec) Print() string {
 	return fmt.Sprintf("%s -> %s", CStr(e.Comm[:]), CStr(e.Argv[:]))
+}
+
+func (e *Exec) FetchOther() interface{} {
+	return e.Argv
+}
+
+func (e *Exec) SetOther(args []interface{}) {
+	tmp := ""
+	for i := range args {
+		tmpRaw := args[i].([128]uint8)
+		tmp = CStr(tmpRaw[:]) + " " + tmp
+	}
+	tmp = strings.Replace(tmp, "\n", "\\n", -1)
+	tmp = strings.TrimSpace(tmp)
+	if len(tmp) > 128 {
+		tmp = tmp[:127]
+	}
+	for i := range tmp {
+		e.Argv[i] = tmp[i]
+	}
+	e.Argv[len(tmp)] = '\x00'
 }
 
 var execSource = `
@@ -36,17 +49,18 @@ var execSource = `
 #include <linux/sched.h>
 #include <linux/fs.h>
 
+` + reqFunctions + `
+
 struct event_t {
 	` + eventBaseStr + `
     char comm[` + strconv.Itoa(commLen) + `];
     char argv[` + strconv.Itoa(argSize) + `];
 };
 
-BPF_PERF_OUTPUT(events);
-
 static int __submit_arg(struct pt_regs *ctx, void *ptr, struct event_t *event)
 {
     bpf_probe_read(event->argv, sizeof(event->argv), ptr);
+    event->ret = ` + strconv.Itoa(eventOther) + `;
     events.perf_submit(ctx, event, sizeof(struct event_t));
     return 1;
 }
@@ -67,24 +81,16 @@ int syscall__execve(struct pt_regs *ctx,
     const char __user *const __user *__envp)
 {
 	` + gatherStr + `
+    ` + getPwd + `
 
     __submit_arg(ctx, (void *)filename, &event);
 
-    #pragma unroll
     for (int i = 1; i < ` + strconv.Itoa(maxArgs) + `; i++) {
         if (submit_arg(ctx, (void *)&__argv[i], &event) == 0)
-             goto out;
+             break;
     }
 
-    // handle truncated argument list
-    char ellipsis[] = "...";
-    __submit_arg(ctx, (void *)ellipsis, &event);
-
-    bpf_get_current_comm(&event.comm, sizeof(event.comm));
-
-	out:
-    event.ret = 0;
-    return 0;
+    ` + submitNormal + `
 }
 
 int do_ret_sys_execve(struct pt_regs *ctx) {
@@ -95,6 +101,9 @@ int do_ret_sys_execve(struct pt_regs *ctx) {
 `
 
 func ExecBPF(evChan chan Event, ctx Ctx) {
+	eventType := "exec"
+	event := &Exec{}
+
 	m := bcc.NewModule(execSource, []string{})
 	defer m.Close()
 
@@ -126,56 +135,5 @@ func ExecBPF(evChan chan Event, ctx Ctx) {
 		os.Exit(1)
 	}
 
-	table := bcc.NewTable(m.TableId("events"), m)
-
-	channel := make(chan []byte, 1000)
-
-	perfMap, err := bcc.InitPerfMap(table, channel, nil)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to init perf map: %s\n", err)
-		os.Exit(1)
-	}
-
-	go func() {
-		args := make(map[uint32][]string)
-		ctx.Load <- "exec"
-		ctx.LoadWg.Done()
-		for {
-			event := &Exec{}
-			data := <-channel
-			err := binary.Read(bytes.NewBuffer(data), bcc.GetHostByteOrder(), event)
-			if err != nil {
-				fmt.Printf("failed to decode received data: %s\n", err)
-				continue
-			}
-			if !event.IsRet() {
-				argItems, ok := args[event.Pid]
-				if !ok {
-					argItems = make([]string, 0)
-				}
-				args[event.Pid] = append(argItems, CStr(event.Argv[:]))
-			} else {
-				argv, ok := args[event.Pid]
-				if !ok {
-					print("no arguments found (argv) for exec")
-				} else {
-					tmp := strings.Join(argv, " ")
-					tmp = strings.Replace(tmp, "\n", "\\n", -1)
-					tmp = strings.TrimSpace(tmp)
-					if len(tmp) > 128 {
-						tmp = tmp[:128]
-					}
-					for i := range tmp {
-						event.Argv[i] = tmp[i]
-					}
-				}
-				evChan <- event
-				delete(args, event.Pid)
-			}
-		}
-	}()
-
-	perfMap.Start()
-	<-ctx.Quit
-	perfMap.Stop()
+	readEvents(event, evChan, ctx, m, eventType)
 }

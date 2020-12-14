@@ -10,14 +10,14 @@ Usage:
 
 Available Commands:
   help        Help about any command
+  hunt        hunt for existing malicious activity
   mitigate    mitigate all known vulnerabilities
-  monitor     actively monitorfor malicious action
-  scan        scan for existing malicious activity
+  monitor     actively monitor for malicious action
   version     print louis version
 
 Flags:
+  -a, --active    counter detected malicious activity (dangerous, may clobber)
   -h, --help      help for louis
-  -p, --passive   don't perform any intrusive action
   -s, --syslog    output to syslog
   -v, --verbose   enable verbose output
 
@@ -52,7 +52,7 @@ louis gathers information from the kernel through eBPF (with BCC). These sources
                    +--------------------------------------------+
 ```
 
-> There is no kernelspace component, which means `louis` is more susceptible to resource exhaustion and execution manipulation. However, if that happens, you'll probably know about it.
+> There is no kernelspace component (other than the eBPF data-gathering code), which means `louis` is more susceptible to resource exhaustion and various types of executable manipulation. However, if that happens, you'll probably know about it.
 
 ## Installation
 
@@ -78,6 +78,9 @@ louis gathers information from the kernel through eBPF (with BCC). These sources
     - sendlines per <time unit> (bash)
     - time between shell spawn and sending commands (maybe)
     - connect() (detect if being scanned)
+- Fixes
+   - Pwd incorrectly reports absolute path when in mounted/chrooted environment (ex. tmux)
+   - Race condition in bcc code? Imagine one open syscall on the same pid starts before another, and ends after -- details would be overwritten?
 
 ## Prior Art
 

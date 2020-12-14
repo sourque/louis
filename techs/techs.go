@@ -19,7 +19,7 @@ type Tech interface {
 	// Hunt takes no parameters and looks for evidence of exploitation
 	Hunt() (Finding, error)
 	// Clean responds to events detected by Scan or Hunt by removing artifacts
-	Clean(events.Event) (Finding, error)
+	Clean(events.Event) error
 	// Check determines if vulnerability mitigation is required
 	Check() (Finding, error)
 	// Mitigation mitigates the vulnerability
@@ -32,8 +32,8 @@ func (t techBase) Hunt() (Finding, error) {
 	return Finding{}, nil
 }
 
-func (t techBase) Clean(events.Event) (Finding, error) {
-	return Finding{}, nil
+func (t techBase) Clean(e events.Event) error {
+	return nil
 }
 
 func (t techBase) Check() (Finding, error) {

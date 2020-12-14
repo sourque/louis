@@ -22,7 +22,7 @@ var (
 )
 
 const (
-	version = "0.0.4"
+	version = "0.0.5"
 )
 
 func main() {
@@ -74,7 +74,7 @@ func main() {
 		},
 	}
 
-	rootCmd.PersistentFlags().BoolVarP(&active, "active", "a", true, "counter detected malicious activity (possibly dangerous)")
+	rootCmd.PersistentFlags().BoolVarP(&active, "active", "a", false, "counter detected malicious activity (dangerous, may clobber)")
 	rootCmd.PersistentFlags().BoolVarP(&output.Verbose, "verbose", "v", false, "enable verbose output")
 	rootCmd.PersistentFlags().BoolVarP(&output.Syslog, "syslog", "s", false, "output to syslog")
 	rootCmd.AddCommand(cmdMonitor, cmdHunt, cmdMitigate, cmdVersion)
@@ -95,9 +95,9 @@ func louisMonitor() {
 	// List of implemented sources
 	sourceList := []func(chan events.Event, events.Ctx){
 		events.ExecBPF,
-		// events.ListenBPF,
+		events.ListenBPF,
 		events.OpenBPF,
-		// events.ReadlineBPF,
+		events.ReadlineBPF,
 	}
 
 	// Load each eBPF module
@@ -113,6 +113,7 @@ func louisMonitor() {
 		evLoaded <- true
 	}()
 
+	// Handle output from BPF modules
 	go func() {
 		output.Info("Beginning monitoring loop...")
 		for {
@@ -129,7 +130,6 @@ func louisMonitor() {
 				output.Negative("Error:", err)
 
 			case ev := <-evChan:
-				// automatically detect and cast type? use wrapper struct with analysis function embedded?
 				events.Log(ev)
 				switch ev.(type) {
 				case *events.Exec:
@@ -165,17 +165,19 @@ func louisMonitor() {
 						art := det.Artifacts[i]
 						output.EventLog(art.Time, events.TypeHeader(art.Ev), art.Ev.Print())
 					}
+				}
 
-					if active {
-						output.Positive("Cleaning", det.Tech)
-						// Clean most recent artifact
-						if len(det.Artifacts) > 0 {
-							det.Tech.Clean(det.Artifacts[0].Ev)
+				if active {
+					// Clean most recent artifact
+					if len(det.Artifacts) > 0 {
+						output.Positive("Cleaning:", det.Tech.Name())
+						if err := det.Tech.Clean(det.Artifacts[0].Ev); err != nil {
+							output.Negative("Cleaning failed:", err.Error())
 						}
-						if mitigate {
-							output.Positive("Mitigating", det.Tech)
-							det.Tech.Mitigate()
-						}
+					}
+					if mitigate {
+						output.Positive("Mitigating", det.Tech)
+						det.Tech.Mitigate()
 					}
 				}
 				output.Tabber(0)

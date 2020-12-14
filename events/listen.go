@@ -24,58 +24,46 @@ func ListenBPF(evChan chan Event, ctx Ctx) {
 	m := bpf.NewModule(`
 		#include <uapi/linux/ptrace.h>
 		#include <net/inet_sock.h>
+		`+reqFunctions+`
 
-		struct listen_event_t {
+		struct event_t {
 			`+eventBaseStr+`
 			u32 addr;
 			u16 port;
 			u16 socktype;
 			u32 backlog;
-			} __attribute__((packed));
+        };
 
-			BPF_PERF_OUTPUT(listen_events);
 
-			int kprobe__inet_listen(struct pt_regs *ctx, struct socket *sock, int backlog) {
-				struct listen_event_t event = {};
+        int kprobe__inet_listen(struct pt_regs *ctx, struct socket *sock, int backlog) {
+            `+gatherStr+`
+            `+getPwd+`
 
-				if (!PT_REGS_RC(ctx))
-					return 0;
+            // Cast types
+            struct sock *sk = sock->sk;
+            struct inet_sock *inet = inet_sk(sk);
 
-				event.pid = bpf_get_current_pid_tgid();
-				event.uid = bpf_get_current_uid_gid();
+            // Working values. You *need* to initialize them to give them "life" on the stack and use them afterward
+            u32 addr = 0;
+            u16 port = 0;
 
-				// Cast types
-				struct sock *sk = sock->sk;
-				struct inet_sock *inet = inet_sk(sk);
+            // Pull in details. As 'inet_sk' is internally a type cast, we need to use 'bpf_probe_read'
+            // read: load into 'laddr' 'sizeof(laddr)' bytes from address 'inet->inet_rcv_saddr'
+            bpf_probe_read(&addr, sizeof(addr), &(inet->inet_rcv_saddr));
+            bpf_probe_read(&port, sizeof(port), &(inet->inet_sport));
 
-				// Working values. You *need* to initialize them to give them "life" on the stack and use them afterward
-				u32 addr = 0;
-				u16 port = 0;
+            event.backlog = backlog;
+            event.socktype = sock->type;
+            event.addr = (addr>>8) | (addr<<8);
+            event.port = (port>>8) | (port<<8);
+            `+submitNormal+`
+        }
 
-				// Pull in details. As 'inet_sk' is internally a type cast, we need to use 'bpf_probe_read'
-				// read: load into 'laddr' 'sizeof(laddr)' bytes from address 'inet->inet_rcv_saddr'
-				bpf_probe_read(&addr, sizeof(addr), &(inet->inet_rcv_saddr));
-				bpf_probe_read(&port, sizeof(port), &(inet->inet_sport));
-
-				event.backlog = backlog;
-				event.socktype = sock->type;
-				event.addr = (addr>>8) | (addr<<8);
-				event.port = (port>>8) | (port<<8);
-
-				listen_events.perf_submit(ctx, &event, sizeof(event));
-
-				return 0;
-			}
-
-			int do_ret_inet_listen(struct pt_regs *ctx)
-			{
-			    struct listen_event_t event = {};
-			    event.pid = bpf_get_current_pid_tgid() >> 32;
-				event.ret = 1;
-			    event.retval = PT_REGS_RC(ctx);
-			    listen_events.perf_submit(ctx, &event, sizeof(event));
-			    return 0;
-			}
+        int do_ret_inet_listen(struct pt_regs *ctx)
+        {
+            `+gatherStr+`
+            `+retStr+`
+        }
 		`, []string{})
 	defer m.Close()
 
@@ -103,5 +91,5 @@ func ListenBPF(evChan chan Event, ctx Ctx) {
 	}
 
 	event := &Listen{}
-	readEvents(event, evChan, ctx, m, eventType, nil)
+	readEvents(event, evChan, ctx, m, eventType)
 }

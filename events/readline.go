@@ -25,7 +25,7 @@ type Readline struct {
 	Str [80]byte
 }
 
-func (e Readline) Print() string {
+func (e *Readline) Print() string {
 	return fmt.Sprintf("%s", CStr(e.Str[:]))
 }
 
@@ -33,31 +33,19 @@ func ReadlineBPF(evChan chan Event, ctx Ctx) {
 	eventType := "readline"
 	m := bpf.NewModule(`
 		#include <uapi/linux/ptrace.h>
+		`+reqFunctions+`
 
-struct readline_event_t {
-		u32 uid;
-        u32 pid;
-		int retval;
-		int ret;
-		char pwd[128];
+    struct event_t {
+        `+eventBaseStr+`
         char str[80];
-} __attribute__((packed));
+    };
 
-BPF_PERF_OUTPUT(readline_events);
-
-int get_return_value(struct pt_regs *ctx) {
-        struct readline_event_t event = {};
-        if (!PT_REGS_RC(ctx))
-            return 0;
-
-		event.ret = 1;
-		event.pid = bpf_get_current_pid_tgid();
-		event.uid = bpf_get_current_uid_gid();
+    int get_return_value(struct pt_regs *ctx) {
+        `+gatherStr+`
+        `+getPwd+`
         bpf_probe_read(&event.str, sizeof(event.str), (void *)PT_REGS_RC(ctx));
-        readline_events.perf_submit(ctx, &event, sizeof(event));
-
-        return 0;
-}
+       `+retStr+`
+    }
 
 `, []string{})
 	defer m.Close()
@@ -75,5 +63,5 @@ int get_return_value(struct pt_regs *ctx) {
 	}
 
 	event := &Readline{}
-	readEvents(event, evChan, ctx, m, eventType, nil)
+	readEvents(event, evChan, ctx, m, eventType)
 }

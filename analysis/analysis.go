@@ -32,7 +32,7 @@ func (d *Detection) Brief() string {
 		endDate := output.Time(d.Artifacts[len(d.Artifacts)-1].Time)
 		return fmt.Sprintf("%s in %s from %s - %s", u.Username, d.Artifacts[0].Ev.FetchPwd(), startDate, endDate)
 	}
-	return fmt.Sprintf("no artifacts added")
+	return fmt.Sprintf("No artifacts added! This usually happens when an event that triggered a warning is filtered out due to verbosity.")
 }
 
 func processTechs(e events.Event, ts []techs.Tech) ([]*Detection, error) {

@@ -26,12 +26,15 @@ type Event interface {
 	Write([]byte) (Event, error)
 	FetchUid() uint32
 	FetchPid() uint32
+	FetchPwd() string
+	FetchRetVal() int32
+	FetchOther() interface{}
 	IsRet() bool
 	IsPwd() bool
-	FetchRetVal() int32
-	SetRetVal(int32)
+	IsOther() bool
 	SetPwd(string)
-	FetchPwd() string
+	SetRetVal(int32)
+	SetOther([]interface{})
 }
 
 type eventBase struct {
@@ -52,6 +55,7 @@ const (
 	eventNormal = iota
 	eventPwd
 	eventRet
+	eventOther
 )
 
 func (e *eventBase) Print() string {
@@ -72,6 +76,10 @@ func (e *eventBase) IsRet() bool {
 
 func (e *eventBase) IsPwd() bool {
 	return e.Ret == eventPwd
+}
+
+func (e *eventBase) IsOther() bool {
+	return e.Ret == eventOther
 }
 
 func (e *eventBase) FetchRetVal() int32 {
@@ -96,11 +104,17 @@ func (e *eventBase) FetchPwd() string {
 	return pwd
 }
 
+func (e *eventBase) FetchOther() interface{} {
+	return nil
+}
+
 func (e *eventBase) SetPwd(tmp string) {
 	for i := range tmp {
 		e.Pwd[i] = tmp[i]
 	}
 }
+
+func (e *eventBase) SetOther(input []interface{}) {}
 
 // Contains the most recent 1000 events
 var EventLog = ring.New(1000)
@@ -152,7 +166,9 @@ func newError(eventType, errorMsg string, err error) string {
 	return eventType + ": " + errorMsg + ": " + err.Error()
 }
 
-func readEvents(event Event, evChan chan Event, ctx Ctx, m *bcc.Module, eventType string, normalHandler func(interface{})) {
+// readEvents provides a standard interface to read and parse events from a BPF map
+// and correctly read values for each type of event reture value
+func readEvents(event Event, evChan chan Event, ctx Ctx, m *bcc.Module, eventType string) {
 	table := bcc.NewTable(m.TableId("events"), m)
 	channel := make(chan []byte, 1000)
 
@@ -164,6 +180,7 @@ func readEvents(event Event, evChan chan Event, ctx Ctx, m *bcc.Module, eventTyp
 
 	go func() {
 		pwdCache := make(map[uint32][]string)
+		otherCache := make(map[uint32][]interface{})
 		eventCache := make(map[uint32]Event)
 		ctx.Load <- eventType
 		ctx.LoadWg.Done()
@@ -175,41 +192,54 @@ func readEvents(event Event, evChan chan Event, ctx Ctx, m *bcc.Module, eventTyp
 				continue
 			}
 			if event.IsRet() {
-
 				caEvent, ok := eventCache[event.FetchPid()]
 				if ok {
 					caEvent.SetRetVal(event.FetchRetVal())
+					// Workaround for valid execve comm only on return
+					switch event.(type) {
+					case *Exec:
+						tmpEventNew := event.(*Exec)
+						tmpEventOld := caEvent.(*Exec)
+						tmpEventOld.Comm = tmpEventNew.Comm
+						caEvent = tmpEventOld
+					}
 					event = caEvent
+				} else {
+					// ctx.Error <- newError(eventType, "event didn't have an item in cache!", errors.New("event didn't have an item in event cache"))
 				}
-
-				pwdVal, ok := pwdCache[event.FetchPid()]
-				if ok {
+				if pwdVal, ok := pwdCache[event.FetchPid()]; ok {
 					tmp := strings.Join(pwdVal, "/")
+					if tmp[0] != '/' {
+						tmp = "/" + tmp
+					}
 					tmp = strings.Replace(tmp, "\n", "\\n", -1)
 					tmp = strings.TrimSpace(tmp)
-					if len(tmp) > 124 {
+					if len(tmp) >= 128 {
 						tmp = tmp[:124] + "..."
 					}
 					event.SetPwd(tmp)
+					delete(pwdCache, event.FetchPid())
 				}
-
+				if otherVal, ok := otherCache[event.FetchPid()]; ok {
+					event.SetOther(otherVal)
+					delete(otherCache, event.FetchPid())
+				}
 				evChan <- event
 				delete(eventCache, event.FetchPid())
-				delete(pwdCache, event.FetchPid())
-
 			} else if event.IsPwd() {
-				// fmt.Println("received new dir", CStr(event.Pwd[:]))
 				pwdItems, ok := pwdCache[event.FetchPid()]
 				if !ok {
 					pwdItems = make([]string, 0)
 				}
 				pwdCache[event.FetchPid()] = append([]string{event.FetchPwd()}, pwdItems...)
-			} else {
-				if normalHandler != nil {
-					normalHandler(event)
-				} else {
-					eventCache[event.FetchPid()] = event
+			} else if event.IsOther() {
+				otherItems, ok := otherCache[event.FetchPid()]
+				if !ok {
+					otherItems = make([]interface{}, 0)
 				}
+				otherCache[event.FetchPid()] = append([]interface{}{event.FetchOther()}, otherItems...)
+			} else {
+				eventCache[event.FetchPid()] = event
 			}
 		}
 	}()
