@@ -57,6 +57,10 @@ louis gathers information from the kernel through eBPF (with BCC). These sources
 ## Installation
 
 1. Ensure [BCC](https://github.com/iovisor/bcc) is installed.
+    ```
+    sudo apt-get install bcc
+    sudo apt-get install ibbpfcc-dev
+    ```
 2. Install `louis`.
     - Clone this repository and build the binary (requires Go):
         ```
